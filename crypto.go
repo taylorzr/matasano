@@ -1,8 +1,13 @@
 package main
 
 import (
+	"encoding/base64"
+	"io/ioutil"
 	"math"
+	"testing"
 	"unicode"
+
+	"github.com/stretchr/testify/assert"
 )
 
 var potentialKeys []byte
@@ -12,6 +17,22 @@ func init() {
 	for i := 0; i < 255; i++ {
 		potentialKeys[i] = byte(i)
 	}
+}
+
+func pad(bytes []byte, blocksize int) []byte {
+	padding := make([]byte, blocksize-(len(bytes)%blocksize))
+	for i := range padding {
+		padding[i] = '\x04'
+	}
+	return append(bytes, padding...)
+}
+
+func loadb64(t *testing.T, path string) []byte {
+	data, err := ioutil.ReadFile(path)
+	assert.Nil(t, err)
+	ciphertext, err := base64.StdEncoding.DecodeString(string(data))
+	assert.Nil(t, err)
+	return ciphertext
 }
 
 func decrypt(ciphertext, key []byte) []byte {
@@ -100,6 +121,14 @@ func ham(a, b []byte) int {
 	}
 
 	return diff
+}
+
+func xor(a, b []byte) []byte {
+	c := make([]byte, len(a))
+	for i := range a {
+		c[i] = a[i] ^ b[i]
+	}
+	return c
 }
 
 func xorAndRank(key byte, bytes []byte) ([]byte, int) {

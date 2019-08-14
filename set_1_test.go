@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/aes"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -85,9 +86,7 @@ func Test4(t *testing.T) {
 
 	fmt.Printf("Key: %c Line: %d Rank: %d		%s\n", key, lineNumber+1, bestRank, plaintext)
 
-	if !strings.HasPrefix(string(plaintext), "Now that the party is jumping") {
-		t.Errorf("Expected the party to be jumping, but got '%s'", plaintext)
-	}
+	assert.True(t, strings.HasPrefix(string(plaintext), "Now that the party is jumping"))
 }
 
 func Test5(t *testing.T) {
@@ -100,14 +99,6 @@ I go crazy when I hear a cymbal`)
 	assert.Equal(t, hex.EncodeToString(plaintext), "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f")
 }
 
-func load6(t *testing.T) []byte {
-	data, err := ioutil.ReadFile("6.txt")
-	assert.Nil(t, err)
-	ciphertext, err := base64.StdEncoding.DecodeString(string(data))
-	assert.Nil(t, err)
-	return ciphertext
-}
-
 // Check ham
 func Test6a(t *testing.T) {
 	result := ham([]byte("this is a test"), []byte("wokka wokka!!!"))
@@ -117,7 +108,7 @@ func Test6a(t *testing.T) {
 
 // Find key length
 func Test6b(t *testing.T) {
-	ciphertext := load6(t)
+	ciphertext := loadb64(t, "6.txt")
 
 	keysize, diff := findKeysize(ciphertext)
 
@@ -128,7 +119,7 @@ func Test6b(t *testing.T) {
 
 // Find key
 func Test6c(t *testing.T) {
-	ciphertext := load6(t)
+	ciphertext := loadb64(t, "6.txt")
 
 	bytesByKeyIndex := groupByKeyIndex(ciphertext, 29)
 
@@ -146,9 +137,63 @@ func Test6c(t *testing.T) {
 
 // Decrypt
 func Test6d(t *testing.T) {
-	ciphertext := load6(t)
+	ciphertext := loadb64(t, "6.txt")
 
 	plaintext := decrypt(ciphertext, []byte("Terminator X: Bring the noise"))
 
 	fmt.Println(string(plaintext))
+}
+
+// ECB encryption
+func Test7(t *testing.T) {
+	ciphertext := loadb64(t, "7.txt")
+
+	cipher, _ := aes.NewCipher([]byte("YELLOW SUBMARINE"))
+
+	plaintext := make([]byte, len(ciphertext))
+
+	for i := 0; i < len(ciphertext); i += 16 {
+		cipher.Decrypt(plaintext[i:i+16], ciphertext[i:i+16])
+	}
+
+	assert.True(t, strings.HasPrefix(string(plaintext), lyrics))
+}
+
+func Test8(t *testing.T) {
+	data, err := ioutil.ReadFile("8.txt")
+	assert.Nil(t, err)
+
+	bestRank := 0
+	bestLine := 0
+
+	for lineNumber, line := range strings.Split(string(data), "\n") {
+		blocks := map[string]int{}
+
+		for i := 0; i < len(line); i += 16 {
+			block := line[i : i+16]
+			blocks[string(block)] += 1
+		}
+
+		rank := 0
+
+		for _, count := range blocks {
+			if count > 1 {
+				rank += (count - 1)
+			}
+		}
+
+		fmt.Printf("Rank: %d	Line: %d\n", rank, lineNumber)
+
+		if rank >= bestRank {
+			bestRank = rank
+			bestLine = lineNumber + 1
+		}
+	}
+
+	fmt.Printf("Best rank: %d	Line: %d\n", bestRank, bestLine)
+	// try to see if any blocks repeat
+
+	// if that doesn't work
+
+	// try ham diff across blocks, and select smallest diff
 }
