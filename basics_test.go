@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"strings"
 	"testing"
-	"unicode"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -49,59 +48,15 @@ func Test2(t *testing.T) {
 	}
 }
 
-func xorAndRank(key byte, bytes []byte) ([]byte, int) {
-	ranking := map[rune]int{
-		'e': 13,
-		't': 12,
-		'a': 11,
-		'o': 10,
-		'i': 9,
-		'n': 8,
-		' ': 7,
-		's': 6,
-		'h': 5,
-		'r': 4,
-		'd': 3,
-		'l': 2,
-		'u': 1,
-	}
-
-	potentialBytes := make([]byte, len(bytes))
-	rank := 0
-
-	for i := range bytes {
-		potentialByte := bytes[i] ^ key
-		potentialBytes[i] = potentialByte
-		rank += ranking[unicode.ToLower(rune(potentialByte))]
-		// rank += ranking[rune(potentialByte)]
-	}
-
-	return potentialBytes, rank
-}
-
 func Test3(t *testing.T) {
 	bytes, err := hex.DecodeString("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")
 	assert.Nil(t, err)
 
-	potentialKeys := []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	key, rank, plaintext := findKey(bytes)
 
-	var bestRank int
-	var bestKey byte
-	var bestPhrase string
+	fmt.Printf("Key: %c Rank: %d		%s\n", key, rank, plaintext)
 
-	for _, key := range potentialKeys {
-		potentialBytes, rank := xorAndRank(key, bytes)
-
-		if rank >= bestRank {
-			bestRank = rank
-			bestKey = key
-			bestPhrase = string(potentialBytes)
-		}
-	}
-
-	fmt.Printf("Key: %c Rank: %d		%s\n", bestKey, bestRank, bestPhrase)
-
-	assert.Equal(t, bestPhrase, "Cooking MC's like a pound of bacon")
+	assert.Equal(t, "Cooking MC's like a pound of bacon", string(plaintext))
 }
 
 func Test4(t *testing.T) {
@@ -109,50 +64,91 @@ func Test4(t *testing.T) {
 	assert.Nil(t, err)
 	lines := strings.Split(string(bytes), "\n")
 
-	potentialKeys := make([]byte, 255)
-	for i := 0; i < 255; i++ {
-		potentialKeys[i] = byte(i)
-	}
-
+	var lineNumber int
+	var key byte
 	var bestRank int
-	var bestKey byte
-	var bestLine int
-	var bestPhrase string
+	var plaintext []byte
 
 	for i, line := range lines {
 		bytes, err := hex.DecodeString(line)
 		assert.Nil(t, err)
 
-		for _, key := range potentialKeys {
-			potentialBytes, rank := xorAndRank(key, bytes)
+		potentialKey, rank, potentialPlaintext := findKey(bytes)
 
-			if rank >= bestRank {
-				bestRank = rank
-				bestKey = key
-				bestLine = i
-				bestPhrase = string(potentialBytes)
-			}
+		if rank >= bestRank {
+			lineNumber = i
+			key = potentialKey
+			bestRank = rank
+			plaintext = potentialPlaintext
 		}
 	}
 
-	fmt.Printf("Key: %c Line: %d Rank: %d		%s\n", bestKey, bestLine+1, bestRank, bestPhrase)
+	fmt.Printf("Key: %c Line: %d Rank: %d		%s\n", key, lineNumber+1, bestRank, plaintext)
 
-	if !strings.HasPrefix(bestPhrase, "Now that the party is jumping") {
-		t.Errorf("Expected the party to be jumping, but got '%s'", bestPhrase)
+	if !strings.HasPrefix(string(plaintext), "Now that the party is jumping") {
+		t.Errorf("Expected the party to be jumping, but got '%s'", plaintext)
 	}
 }
 
 func Test5(t *testing.T) {
-	key := "ICE"
-	phrase := `Burning 'em, if you ain't quick and nimble
-I go crazy when I hear a cymbal`
+	key := []byte("ICE")
+	phrase := []byte(`Burning 'em, if you ain't quick and nimble
+I go crazy when I hear a cymbal`)
 
-	bytes := make([]byte, len(phrase))
+	plaintext := decrypt(phrase, key)
 
-	for i, char := range phrase {
-		k := key[i%3]
-		bytes[i] = byte(char) ^ byte(k)
+	assert.Equal(t, hex.EncodeToString(plaintext), "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f")
+}
+
+func load6(t *testing.T) []byte {
+	data, err := ioutil.ReadFile("6.txt")
+	assert.Nil(t, err)
+	ciphertext, err := base64.StdEncoding.DecodeString(string(data))
+	assert.Nil(t, err)
+	return ciphertext
+}
+
+// Check ham
+func Test6a(t *testing.T) {
+	result := ham([]byte("this is a test"), []byte("wokka wokka!!!"))
+
+	assert.Equal(t, result, 37)
+}
+
+// Find key length
+func Test6b(t *testing.T) {
+	ciphertext := load6(t)
+
+	keysize, diff := findKeysize(ciphertext)
+
+	fmt.Printf("Keysize: %d	Diff: %f\n", keysize, diff)
+
+	assert.Equal(t, keysize, 29)
+}
+
+// Find key
+func Test6c(t *testing.T) {
+	ciphertext := load6(t)
+
+	bytesByKeyIndex := groupByKeyIndex(ciphertext, 29)
+
+	key := make([]byte, 29)
+
+	for i, bytes := range bytesByKeyIndex {
+		blockKey, _, _ := findKey(bytes)
+		key[i] = blockKey
 	}
 
-	assert.Equal(t, hex.EncodeToString(bytes), "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f")
+	fmt.Printf("Key: %s\n", key)
+
+	assert.Equal(t, "Terminator X: Bring the noise", string(key))
+}
+
+// Decrypt
+func Test6d(t *testing.T) {
+	ciphertext := load6(t)
+
+	plaintext := decrypt(ciphertext, []byte("Terminator X: Bring the noise"))
+
+	fmt.Println(string(plaintext))
 }
