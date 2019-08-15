@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/aes"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -144,19 +143,13 @@ func Test6d(t *testing.T) {
 	fmt.Println(string(plaintext))
 }
 
-// ECB encryption
+// ECB crypto
 func Test7(t *testing.T) {
 	ciphertext := loadb64(t, "7.txt")
 
-	cipher, _ := aes.NewCipher([]byte("YELLOW SUBMARINE"))
+	result := ecbDecrypt(ciphertext, defaultKey)
 
-	plaintext := make([]byte, len(ciphertext))
-
-	for i := 0; i < len(ciphertext); i += 16 {
-		cipher.Decrypt(plaintext[i:i+16], ciphertext[i:i+16])
-	}
-
-	assert.True(t, strings.HasPrefix(string(plaintext), lyrics))
+	assert.True(t, strings.HasPrefix(string(result), lyrics))
 }
 
 func Test8(t *testing.T) {

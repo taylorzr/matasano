@@ -1,22 +1,163 @@
 package main
 
 import (
+	"crypto/aes"
+	cryptoRand "crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"io/ioutil"
 	"math"
+	"math/rand"
 	"testing"
+	"time"
 	"unicode"
 
 	"github.com/stretchr/testify/assert"
 )
 
-var potentialKeys []byte
+// TODO: Strip padding of \x04 in decryption functions
+
+var (
+	defaultKey    = []byte("YELLOW SUBMARINE")
+	potentialKeys []byte
+)
 
 func init() {
 	potentialKeys = make([]byte, 255)
 	for i := 0; i < 255; i++ {
 		potentialKeys[i] = byte(i)
 	}
+}
+
+func findCryptoMode(ciphertext []byte) string {
+	dupes := ecbDetect(ciphertext)
+
+	if dupes {
+		return "ECB"
+	} else {
+		return "CBC"
+	}
+}
+
+func randEncrypt(plaintext []byte) ([]byte, string) {
+	rand.Seed(time.Now().UTC().UnixNano())
+	a, b := rand.Intn(5)+5, rand.Intn(5)+5
+	key, startPad, endPad := randomKey(16), randomBytes(a), randomBytes(b)
+	mode := []string{"ECB", "CBC"}[rand.Intn(2)]
+
+	plaintext = append(startPad, plaintext...)
+	plaintext = append(plaintext, endPad...)
+
+	ciphertext := make([]byte, len(plaintext))
+	switch mode {
+	case "ECB":
+		ciphertext = ecbEncrypt(plaintext, key)
+	case "CBC":
+		iv := randomBytes(16)
+		ciphertext = cbcEncrypt(plaintext, key, iv)
+	}
+
+	return ciphertext, mode
+}
+
+func randomKey(length int) []byte {
+	key := make([]byte, length)
+
+	_, err := cryptoRand.Read(key)
+	if err != nil {
+		panic(err)
+	}
+
+	return key
+}
+
+func randomBytes(length int) []byte {
+	bytes := make([]byte, length)
+
+	_, err := cryptoRand.Read(bytes)
+	if err != nil {
+		panic(err)
+	}
+
+	return bytes
+}
+
+func ecbDetect(ciphertext []byte) bool {
+	blocks := map[string]int{}
+
+	for i := 0; i < len(ciphertext); i += 16 {
+		block := ciphertext[i : i+16]
+		blocks[string(block)] += 1
+	}
+
+	dupes := 0
+
+	for _, count := range blocks {
+		if count > 1 {
+			dupes += (count - 1)
+		}
+	}
+
+	return dupes > 0
+}
+
+func ecbEncrypt(plaintext, key []byte) []byte {
+	ciph, _ := aes.NewCipher(key)
+
+	plaintext = pad(plaintext, 16)
+	ciphertext := make([]byte, len(plaintext))
+
+	for i := 0; i < len(plaintext); i += 16 {
+		ciph.Encrypt(ciphertext[i:i+16], plaintext[i:i+16])
+	}
+
+	return ciphertext
+}
+
+func ecbDecrypt(ciphertext, key []byte) []byte {
+	ciph, _ := aes.NewCipher(key)
+
+	plaintext := make([]byte, len(ciphertext))
+
+	for i := 0; i < len(ciphertext); i += 16 {
+		ciph.Decrypt(plaintext[i:i+16], ciphertext[i:i+16])
+	}
+
+	return plaintext
+}
+
+func cbcEncrypt(plaintext, key, iv []byte) []byte {
+	ciph, _ := aes.NewCipher(key)
+
+	plaintext = pad(plaintext, 16)
+	ciphertext := make([]byte, len(plaintext))
+	previousCipherblock := iv
+
+	for i := 0; i < len(plaintext); i += 16 {
+		block := xor(previousCipherblock, plaintext[i:i+16])
+		ciph.Encrypt(ciphertext[i:i+16], block)
+		previousCipherblock = ciphertext[i : i+16]
+	}
+
+	return ciphertext
+}
+
+func cbcDecrypt(ciphertext, key, iv []byte) []byte {
+	ciph, _ := aes.NewCipher(key)
+
+	plaintext := make([]byte, 0, len(ciphertext))
+	previousCipherblock := iv
+
+	fmt.Printf("%#v\n", string(plaintext))
+
+	for i := 0; i < len(ciphertext); i += 16 {
+		block := make([]byte, 16)
+		ciph.Decrypt(block, ciphertext[i:i+16])
+		plaintext = append(plaintext, xor(previousCipherblock, block)...)
+		previousCipherblock = ciphertext[i : i+16]
+	}
+
+	return plaintext
 }
 
 func pad(bytes []byte, blocksize int) []byte {

@@ -1,25 +1,12 @@
 package main
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-var ciph cipher.Block
-
-func init() {
-	var err error
-	ciph, err = aes.NewCipher([]byte("YELLOW SUBMARINE"))
-
-	if err != nil {
-		panic(err)
-	}
-}
 
 // pkcs#7 padding
 func Test9(t *testing.T) {
@@ -45,46 +32,94 @@ from the previous exercise to combine them.
 The file here is intelligible (somewhat) when CBC decrypted against "YELLOW SUBMARINE" with an IV of
 all ASCII 0 (\x00\x00\x00 &c)
 */
-func Test10(t *testing.T) {
-	// IV ^ first block -> cipher encrypt
-	// previous block ^ next block -> cipher encrypt
+
+// Try single block of 16
+func Test10a(t *testing.T) {
+	ciphertext := cbcEncrypt(
+		[]byte("taco bell is #1!"),
+		defaultKey,
+		[]byte(strings.Repeat("\x00", 16)),
+	)
+
+	plaintext := cbcDecrypt(
+		ciphertext,
+		defaultKey,
+		[]byte(strings.Repeat("\x00", 16)),
+	)
+
+	assert.Equal(t, "taco bell is #1!", strings.TrimRight(string(plaintext), "\x04"))
+}
+
+// Try multiple blocks of 16
+func Test10b(t *testing.T) {
+	ciphertext := cbcEncrypt(
+		[]byte("taco bell is #1!taco bell is #2!"),
+		defaultKey,
+		[]byte(strings.Repeat("\x00", 16)),
+	)
+
+	plaintext := cbcDecrypt(
+		ciphertext,
+		defaultKey,
+		[]byte(strings.Repeat("\x00", 16)),
+	)
+
+	assert.Equal(t, "taco bell is #1!taco bell is #2!", strings.TrimRight(string(plaintext), "\x04"))
+}
+
+// Multiple blocks not exactly 16 size
+func Test10c(t *testing.T) {
+	ciphertext := cbcEncrypt(
+		[]byte("taco bell is #1!taco bell is #2! oh no"),
+		defaultKey,
+		[]byte(strings.Repeat("\x00", 16)),
+	)
+
+	plaintext := cbcDecrypt(
+		ciphertext,
+		defaultKey,
+		[]byte(strings.Repeat("\x00", 16)),
+	)
+
+	assert.Equal(t, "taco bell is #1!taco bell is #2! oh no", strings.TrimRight(string(plaintext), "\x04"))
+}
+
+func Test10d(t *testing.T) {
 	ciphertext := loadb64(t, "10.txt")
 
-	plaintext := make([]byte, len(ciphertext))
-	prev := []byte(strings.Repeat("\x00", 16))
+	plaintext := cbcDecrypt(ciphertext, defaultKey, []byte(strings.Repeat("\x00", 16)))
 
-	for i := 0; i < len(ciphertext); i += 16 {
-		block := make([]byte, 16)
-		ciph.Decrypt(block, ciphertext[i:i+16])
-		plaintext = append(plaintext, xor(prev, block)...)
-		prev = ciphertext[i : i+16]
-	}
-
+	// TODO: Don't print this huge block just assert
 	fmt.Println(string(plaintext))
 }
 
-func Test10a(t *testing.T) {
-	plaintext := pad([]byte("taco bell is #1 taco bell is #2 oh no"), 16)
-	ciphertext := make([]byte, len(plaintext))
+/*
+ Now that you have ECB and CBC working:
 
-	previousCipherblock := []byte(strings.Repeat("\x00", 16))
+Write a function to generate a random AES key; that's just 16 random bytes.
 
-	for i := 0; i < len(plaintext); i += 16 {
-		block := xor(previousCipherblock, plaintext[i:i+16])
-		ciph.Encrypt(ciphertext[i:i+16], block)
-		previousCipherblock = ciphertext[i : i+16]
-	}
+Write a function that encrypts data under an unknown key --- that is, a function that generates a
+random key and encrypts under it.
 
-	undone := make([]byte, len(ciphertext))
+The function should look like:
 
-	prev := []byte(strings.Repeat("\x00", 16))
+encryption_oracle(your-input) => [MEANINGLESS JIBBER JABBER]
 
-	for i := 0; i < len(ciphertext); i += 16 {
-		plaintext := make([]byte, 16)
-		ciph.Decrypt(plaintext, ciphertext[i:i+16])
-		undone = append(undone, xor(prev, plaintext)...)
-		prev = ciphertext[i : i+16]
-	}
+ Under the hood, have the function append 5-10 bytes (count chosen randomly) before the plaintext
+ and 5-10 bytes after the plaintext.
 
-	fmt.Println(string(undone))
+Now, have the function choose to encrypt under ECB 1/2 the time, and under CBC the other half (just
+use random IVs each time for CBC). Use rand(2) to decide which to use.
+
+Detect the block cipher mode the function is using each time. You should end up with a piece of code
+that, pointed at a block box that might be encrypting ECB or CBC, tells you which one is happening.
+*/
+func Test11(t *testing.T) {
+	ciphertext, cipher := randEncrypt([]byte("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"))
+
+	result := findCryptoMode(ciphertext)
+
+	fmt.Printf("I think the mode was %s\n", result)
+
+	assert.Equal(t, cipher, result)
 }
